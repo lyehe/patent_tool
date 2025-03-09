@@ -1,0 +1,16 @@
+*.yaml
+*.json
+*.sqlite
+*.txt
+*.csv
+*.jsonl
+*.jsonl.gz
+
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+
