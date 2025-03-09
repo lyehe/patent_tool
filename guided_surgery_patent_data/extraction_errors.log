@@ -1,0 +1,35 @@
+Patent Extraction Log - 2025-03-09 04:49:13
+================================================================================
+
+ERROR - result link: Error processing result link: Invalid URL 'result link': No scheme supplied. Perhaps you meant https://result link?
+Traceback (most recent call last):
+  File "C:\Users\HEQ\Projects\patent_tool\batch_patent.py", line 37, in process_patent_url
+    html_content = get_html(url, is_url=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HEQ\Projects\patent_tool\patent_extract.py", line 164, in get_html
+    raise e from None
+  File "C:\Users\HEQ\Projects\patent_tool\patent_extract.py", line 157, in get_html
+    response = requests.get(input_source, timeout=30)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HEQ\Projects\patent_tool\.venv\Lib\site-packages\requests\api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HEQ\Projects\patent_tool\.venv\Lib\site-packages\requests\api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HEQ\Projects\patent_tool\.venv\Lib\site-packages\requests\sessions.py", line 575, in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HEQ\Projects\patent_tool\.venv\Lib\site-packages\requests\sessions.py", line 484, in prepare_request
+    p.prepare(
+  File "C:\Users\HEQ\Projects\patent_tool\.venv\Lib\site-packages\requests\models.py", line 367, in prepare
+    self.prepare_url(url, params)
+  File "C:\Users\HEQ\Projects\patent_tool\.venv\Lib\site-packages\requests\models.py", line 438, in prepare_url
+    raise MissingSchema(
+requests.exceptions.MissingSchema: Invalid URL 'result link': No scheme supplied. Perhaps you meant https://result link?
+
+
+Extraction Summary:
+Total URLs: 1332
+Successfully processed: 1331
+Errors: 1

@@ -1,6 +1,5 @@
 import re
 import json
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
 import yaml
@@ -14,7 +13,7 @@ class PatentClaim:
 
     number: int
     text: str
-    dependent_on: Optional[int] = None
+    dependent_on: int | None = None
 
 
 @dataclass
@@ -23,17 +22,17 @@ class PatentData:
 
     patent_number: str = ""
     title: str = ""
-    assignees: List[str] = field(default_factory=list)
-    inventors: List[str] = field(default_factory=list)
+    assignees: list[str] = field(default_factory=list)
+    inventors: list[str] = field(default_factory=list)
     priority_date: str = ""
     filing_date: str = ""
     publication_date: str = ""
     grant_date: str = ""
     abstract: str = ""
     description: str = ""
-    claims: List[PatentClaim] = field(default_factory=list)
+    claims: list[PatentClaim] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert patent data to dictionary for serialization."""
         return {
             "patent_number": self.patent_number,
@@ -188,7 +187,7 @@ def extract_text(soup: BeautifulSoup, itemprop: str) -> str:
     return text
 
 
-def extract_list(soup: BeautifulSoup, prop: str) -> List[str]:
+def extract_list(soup: BeautifulSoup, prop: str) -> list[str]:
     """
     Extract a list of text values from elements with specified itemprop.
 
@@ -256,531 +255,377 @@ def extract_grant_date(soup: BeautifulSoup) -> str:
     return ""
 
 
-def extract_assignees(soup: BeautifulSoup) -> List[str]:
+def extract_names(soup: BeautifulSoup, entity_type: str) -> list[str]:
     """
-    Extract patent assignees, preserving all original names including foreign language content.
+    Extract inventors or assignees from patent HTML.
 
-    Args:
-        soup: BeautifulSoup object containing the HTML
-
-    Returns:
-        List of assignee names with original text preserved
+    :param soup: BeautifulSoup object containing the HTML
+    :param entity_type: Type of entity to extract ('inventor' or 'assignee')
+    :return: List of names with original text preserved
     """
-    assignees = []
+    names = []
 
-    # Method 1: Look for elements with itemprop="assignee"
-    assignee_elements = soup.find_all(attrs={"itemprop": "assignee"})
-    for elem in assignee_elements:
-        # Try to find the name within the element
-        name_elem = elem.find(attrs={"itemprop": "name"})
-        if name_elem:
+    # Method 1: Look for elements with itemprop attribute
+    for elem in soup.find_all(attrs={"itemprop": entity_type}):
+        if name_elem := elem.find(attrs={"itemprop": "name"}):
             name = name_elem.get_text(strip=True)
         else:
             name = elem.get_text(strip=True)
+        if name and name not in names:
+            names.append(name)
 
-        if name and name not in assignees:
-            assignees.append(name)
-
-    # Method 2: Look for assignee section by ID
-    if not assignees:
-        assignee_section = soup.find(id="assigneeSection") or soup.find(
-            id="patent-assignees"
+    # Method 2: Look for section by ID
+    if not names:
+        section_ids = [f"{entity_type}Section", f"patent-{entity_type}s"]
+        section = next(
+            (soup.find(id=id) for id in section_ids if soup.find(id=id)), None
         )
-        if assignee_section:
-            # Look for list items or spans within the section
-            items = assignee_section.find_all(["li", "span", "div", "a"])
-            for item in items:
+        if section:
+            for item in section.find_all(["li", "span", "div", "a"]):
                 name = item.get_text(strip=True)
                 if (
                     name
-                    and name not in assignees
-                    and not any(c in name for c in ["Assignee", "Current", "Original"])
+                    and name not in names
+                    and not any(
+                        c in name
+                        for c in [entity_type.capitalize(), "Current", "Original"]
+                    )
                 ):
-                    assignees.append(name)
+                    names.append(name)
 
-    # Method 3: Look for dt/dd pairs with 'Assignee' label
-    if not assignees:
-        dt_elements = soup.find_all("dt")
-        for dt in dt_elements:
-            if "assignee" in dt.get_text().lower():
-                # Find the next dd element, but handle case where it might not exist
-                dd = dt.find_next("dd")
-                # Only proceed if dd exists
-                if dd is not None:  # This is the bug fix
-                    name = dd.get_text(strip=True)
-                    if name and name not in assignees:
-                        assignees.append(name)
+    # Method 3: Look for dt/dd pairs with label
+    if not names:
+        for dt in soup.find_all("dt"):
+            if entity_type in dt.get_text().lower() and (dd := dt.find_next("dd")):
+                name = dd.get_text(strip=True)
+                if name and name not in names:
+                    names.append(name)
 
-    # Method 4: Look for table rows with assignee information
-    if not assignees:
-        rows = soup.find_all("tr")
-        for row in rows:
+    # Method 4: Look for table rows
+    if not names:
+        for row in soup.find_all("tr"):
             cells = row.find_all("td")
-            if len(cells) >= 2:
-                header = cells[0].get_text().lower()
-                if "assignee" in header:
-                    value = cells[1].get_text(strip=True)
-                    if value and value not in assignees:
-                        assignees.append(value)
+            if len(cells) >= 2 and entity_type in cells[0].get_text().lower():
+                value = cells[1].get_text(strip=True)
+                if value and value not in names:
+                    names.append(value)
 
-    # Method 5: For Google Patents, look for specific div classes
-    if not assignees:
+    # For assignees, try Google Patents specific classes
+    if entity_type == "assignee" and not names:
         for div in soup.find_all(
             "div",
-            class_=lambda c: c and ("patent-assignee" in c or "assignee-list" in c),
+            class_=lambda c: c
+            and (f"patent-{entity_type}" in c or f"{entity_type}-list" in c),
         ):
             for item in div.find_all(["a", "span", "div"]):
                 name = item.get_text(strip=True)
-                if name and name not in assignees and len(name) > 1:
-                    assignees.append(name)
+                if name and name not in names and len(name) > 1:
+                    names.append(name)
 
     # Clean up results
-    cleaned_assignees = []
-    for assignee in assignees:
-        # Remove any labels or common formatting issues
-        cleaned = re.sub(r"^(Current|Original)\s+Assignee:?\s*", "", assignee)
-        cleaned = cleaned.strip()
-        if cleaned and cleaned not in cleaned_assignees:
-            cleaned_assignees.append(cleaned)
-
-    return cleaned_assignees
+    pattern = rf"^(Current|Original)\s+{entity_type.capitalize()}:?\s*"
+    return [
+        re.sub(pattern, "", name).strip()
+        for name in names
+        if re.sub(pattern, "", name).strip()
+    ]
 
 
-def extract_description(soup: BeautifulSoup) -> str:
+def extract_section_text(
+    soup: BeautifulSoup, selectors: list[tuple[str, str, tuple[str, str] | None]]
+) -> str:
     """
-    Extract patent description with foreign language removal (optimized).
-    
-    Args:
-        soup: BeautifulSoup object containing the HTML
-        
-    Returns:
-        Description text with foreign language removed but English preserved
+    Extract text from a section using multiple selectors.
+
+    :param soup: BeautifulSoup object
+    :param selectors: List of selector tuples (selector_type, attribute, value)
+    :return: Cleaned section text
     """
-    # Find the description section - try all selectors at once
-    description_section = (
-        soup.find("section", attrs={"itemprop": "description"}) or
-        soup.find(id="descriptionText") or
-        soup.find("section", id="description")
-    )
-    
-    if not description_section:
+    section = None
+    for selector_type, attr_name, attr_value in selectors:
+        if selector_type == "tag":
+            section = soup.find(attr_name, attrs={attr_value[0]: attr_value[1]})
+        else:  # id
+            section = soup.find(id=attr_name)
+        if section:
+            break
+
+    if not section:
         return ""
-    
-    # Create a single copy to work with
-    desc_copy = BeautifulSoup(str(description_section), "html.parser")
-    
-    # Remove all foreign language spans in one operation
-    for src in desc_copy.find_all("span", class_="google-src-text"):
+
+    # Create a copy, remove foreign language spans
+    section_copy = BeautifulSoup(str(section), "html.parser")
+    for src in section_copy.find_all("span", class_="google-src-text"):
         src.extract()
-    
-    # Get the text content with a single pass
-    description_text = desc_copy.get_text(separator=" ", strip=True)
-    
-    # Clean up formatting with pre-compiled regex
-    description_text = re.sub(r'\s{2,}', ' ', description_text)
-    description_text = re.sub(r'\n{3,}', '\n\n', description_text)
-    
-    return description_text.strip()
+
+    # Get text content and clean it
+    content = section_copy.get_text(separator=" ", strip=True)
+    content = re.sub(r"\s{2,}", " ", content)
+    return content.strip()
 
 
-def extract_claims(claims_section) -> List[PatentClaim]:
+def extract_claims(claims_section) -> list[PatentClaim]:
     """
     Extract patent claims with optimized performance, preserving complex chemical formulas.
-    
+
     :param claims_section: The claims section of the patent document
     :return: List of PatentClaim objects
     """
     if not claims_section:
         return []
-    
-    # Pre-compile regex patterns
-    claim_num_pattern = re.compile(r'claim-?(\d+)|c(\d+)$|CLM-0*(\d+)|en-cl(\d+)|num="?(\d+)"?')
-    dependency_pattern = re.compile(r'(?:according to|as claimed in|of|in|as in|per)\s+claim\s+(\d+)', re.IGNORECASE)
-    claim_pattern = re.compile(r'^\s*(\d+)[\.\)]')
-    whitespace_pattern = re.compile(r'\s{2,}')
-    
-    # Create a copy to work with but keep original structure
+
+    # Prepare regex patterns and BS copy
+    patterns = {
+        "claim_num": re.compile(
+            r'claim-?(\d+)|c(\d+)$|CLM-0*(\d+)|en-cl(\d+)|num="?(\d+)"?'
+        ),
+        "dependency": re.compile(
+            r"(?:according to|as claimed in|of|in|as in|per)\s+claim\s+(\d+)",
+            re.IGNORECASE,
+        ),
+        "claim_start": re.compile(r"^\s*(\d+)[\.\)]"),
+        "whitespace": re.compile(r"\s{2,}"),
+    }
+
     claims_copy = BeautifulSoup(str(claims_section), "html.parser")
-    
-    # Remove only the google-src-text spans (foreign language content)
+    # Remove foreign language spans
     for src in claims_copy.find_all("span", class_="google-src-text"):
         src.extract()
-    
-    claims = []
-    processed_claims = set()  # Track which claims we've already processed
-    
-    # Try multiple approaches to ensure we extract all claims
-    
-    # Method 1: Handle standard format with div.claim elements
-    claim_divs = claims_copy.find_all('div', class_='claim')
-    
-    if claim_divs:
-        for claim_div in claim_divs:
-            # Extract claim ID to avoid duplicates
-            claim_id = claim_div.get('id', '')
-            if claim_id in processed_claims or claim_div.find_parent('div', class_='claim'):
+
+    claims: list[PatentClaim] = []
+    processed: set[str] = set()
+
+    # Extract from claim div elements
+    if claim_divs := claims_copy.find_all("div", class_="claim"):
+        for div in claim_divs:
+            claim_id = div.get("id", "")
+            if claim_id in processed or div.find_parent("div", class_="claim"):
                 continue
-                
-            # Extract claim number
-            claim_num_str = claim_div.get('num', '')
+
+            # Get claim number from various sources
+            claim_num_str = div.get("num", "")
             if not claim_num_str and claim_id:
-                match = claim_num_pattern.search(claim_id)
-                if match:
-                    # Get first non-None group
-                    for group in match.groups():
-                        if group:
-                            claim_num_str = group
-                            break
-            
-            # Try extracting from a bold element if no number found
+                if match := patterns["claim_num"].search(claim_id):
+                    claim_num_str = next((g for g in match.groups() if g), "")
+
             if not claim_num_str:
-                first_text = claim_div.get_text().strip().split('.')[0]
+                first_text = div.get_text().strip().split(".")[0]
                 if first_text.isdigit():
                     claim_num_str = first_text
-            
+
             try:
                 claim_num = int(claim_num_str)
             except (ValueError, TypeError):
-                # If we couldn't extract a valid number, skip this claim
                 continue
-                
-            # Extract claim text while preserving structure
-            # First, try to use claim-text divs if they exist
-            claim_text_elements = claim_div.find_all('div', class_='claim-text')
-            
-            if claim_text_elements:
-                # Join all claim-text parts with proper spacing
+
+            # Extract claim text
+            if text_elements := div.find_all("div", class_="claim-text"):
                 claim_parts = []
-                for element in claim_text_elements:
-                    # Convert to string, then parse to keep structure but remove unwanted tags
+                for element in text_elements:
                     element_clean = BeautifulSoup(str(element), "html.parser")
-                    
-                    # Handle patent-image spans
-                    image_spans = element_clean.find_all("span", class_="patent-image-not-available")
-                    for span in image_spans:
+                    for span in element_clean.find_all(
+                        "span", class_="patent-image-not-available"
+                    ):
                         span.replace_with("[CHEMICAL FORMULA]")
-                    
-                    # Add the text with structure preserved
-                    part_text = element_clean.get_text(strip=True)
-                    if part_text:
+                    if part_text := element_clean.get_text(strip=True):
                         claim_parts.append(part_text)
-                
                 claim_text = " ".join(claim_parts)
             else:
-                # Fallback: extract text directly from the claim div
-                claim_text = claim_div.get_text(strip=True)
-            
-            # Clean up text
-            claim_text = whitespace_pattern.sub(' ', claim_text)
-            if claim_text.startswith(f"{claim_num}. "):
-                claim_text = claim_text[len(f"{claim_num}. "):]
-            elif claim_text.startswith(f"{claim_num}."):
-                claim_text = claim_text[len(f"{claim_num}."):]
-            elif claim_text.startswith(f"{claim_num} "):
-                claim_text = claim_text[len(f"{claim_num} "):]
-            
+                claim_text = div.get_text(strip=True)
+
+            # Clean text
+            claim_text = patterns["whitespace"].sub(" ", claim_text)
+            prefixes = [f"{claim_num}. ", f"{claim_num}.", f"{claim_num} "]
+            for prefix in prefixes:
+                if claim_text.startswith(prefix):
+                    claim_text = claim_text[len(prefix) :]
+                    break
+
             # Detect dependency
             dependent_on = None
-            
-            # Check for claim-ref elements first
-            claim_refs = claim_div.find_all('claim-ref')
-            if claim_refs:
-                for ref in claim_refs:
-                    ref_id = ref.get('idref', '')
-                    if ref_id:
-                        # Try to extract number from reference ID
-                        match = claim_num_pattern.search(ref_id)
-                        if match:
-                            for group in match.groups():
-                                if group:
-                                    try:
-                                        ref_num = int(group)
-                                        if ref_num < claim_num:
-                                            dependent_on = ref_num
-                                            break
-                                    except (ValueError, TypeError):
-                                        pass
-            
-            # If no dependency found, check text for references
+
+            # Check claim-ref elements
+            for ref in div.find_all("claim-ref"):
+                if ref_id := ref.get("idref", ""):
+                    if match := patterns["claim_num"].search(ref_id):
+                        if ref_num_str := next((g for g in match.groups() if g), None):
+                            try:
+                                ref_num = int(ref_num_str)
+                                if ref_num < claim_num:
+                                    dependent_on = ref_num
+                                    break
+                            except (ValueError, TypeError):
+                                pass
+
+            # Check text for references
             if not dependent_on:
-                match = dependency_pattern.search(claim_text)
-                if match:
+                if match := patterns["dependency"].search(claim_text):
                     try:
                         dep_num = int(match.group(1))
                         if dep_num < claim_num:
                             dependent_on = dep_num
                     except (ValueError, TypeError):
                         pass
-            
-            # Check for dependency by parent div class
-            if not dependent_on and claim_div.parent:
-                parent_class = claim_div.parent.get('class', [])
-                if 'claim-dependent' in parent_class:
-                    # Try to find out which claim it depends on
-                    match = dependency_pattern.search(claim_text)
-                    if match:
-                        try:
-                            dep_num = int(match.group(1))
-                            if dep_num < claim_num:
-                                dependent_on = dep_num
-                        except (ValueError, TypeError):
-                            pass
-                    # If still no dependency found but it's marked as dependent,
-                    # it probably depends on the previous claim
-                    if not dependent_on and claim_num > 1:
-                        dependent_on = claim_num - 1
-            
-            # Add the claim
-            if claim_text:
-                claims.append(PatentClaim(number=claim_num, text=claim_text, dependent_on=dependent_on))
-                processed_claims.add(claim_id if claim_id else str(claim_num))
-    
-    # Method 2: Handle claims within ordered lists (WO applications)
-    if not claims:
-        ol_elements = claims_copy.find_all('ol')
-        if ol_elements:
-            for ol in ol_elements:
-                li_elements = ol.find_all('li')
-                for i, li in enumerate(li_elements, 1):
-                    # Extract claim text
-                    claim_text = li.get_text(strip=True)
-                    
-                    # Try to find claim number
-                    match = claim_pattern.search(claim_text)
-                    claim_num = i  # Default to position in list
-                    if match:
-                        try:
-                            claim_num = int(match.group(1))
-                            # Remove the claim number from the beginning
-                            claim_text = claim_text[match.end():].strip()
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    # Check for dependency
-                    dependent_on = None
-                    match = dependency_pattern.search(claim_text)
-                    if match:
-                        try:
-                            dep_num = int(match.group(1))
-                            if dep_num < claim_num:
-                                dependent_on = dep_num
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    if claim_text:
-                        claims.append(PatentClaim(number=claim_num, text=claim_text, dependent_on=dependent_on))
-    
-    # Method 3: Handle original Google Patents format with <claim> elements
-    if not claims:
-        claim_elements = claims_copy.find_all('claim')
-        if claim_elements:
-            for claim_elem in claim_elements:
-                # Extract claim number
-                claim_num_str = claim_elem.get('num', '')
-                if not claim_num_str and 'id' in claim_elem.attrs:
-                    match = claim_num_pattern.search(claim_elem['id'])
-                    if match:
-                        for group in match.groups():
-                            if group:
-                                claim_num_str = group
-                                break
-                
-                try:
-                    claim_num = int(claim_num_str)
-                except (ValueError, TypeError):
-                    continue
-                
-                # Extract text with structure preserved
-                claim_text = claim_elem.get_text(strip=True)
-                
-                # Check for dependency
-                dependent_on = None
-                if 'depends' in claim_elem.attrs:
+
+            # Check parent div class
+            if (
+                not dependent_on
+                and div.parent
+                and "claim-dependent" in div.parent.get("class", [])
+            ):
+                if match := patterns["dependency"].search(claim_text):
                     try:
-                        dependent_on = int(claim_elem['depends'])
-                    except (ValueError, TypeError):
-                        pass
-                
-                if not dependent_on:
-                    match = dependency_pattern.search(claim_text)
-                    if match:
-                        try:
-                            dep_num = int(match.group(1))
-                            if dep_num < claim_num:
-                                dependent_on = dep_num
-                        except (ValueError, TypeError):
-                            pass
-                
-                if claim_text:
-                    claims.append(PatentClaim(number=claim_num, text=claim_text, dependent_on=dependent_on))
-    
-    # Method 4: Last resort - try to parse from plain text
-    if not claims:
-        # Try to find claim-like structures directly
-        text = claims_copy.get_text()
-        claim_matches = re.finditer(r'(\d+)\.\s+(.*?)(?=(?:\d+)\.|$)', text, re.DOTALL)
-        
-        for match in claim_matches:
-            try:
-                claim_num = int(match.group(1))
-                claim_text = match.group(2).strip()
-                
-                # Check for dependency
-                dependent_on = None
-                dep_match = dependency_pattern.search(claim_text)
-                if dep_match:
-                    try:
-                        dep_num = int(dep_match.group(1))
+                        dep_num = int(match.group(1))
                         if dep_num < claim_num:
                             dependent_on = dep_num
                     except (ValueError, TypeError):
                         pass
-                
+                # Default to previous claim
+                if not dependent_on and claim_num > 1:
+                    dependent_on = claim_num - 1
+
+            if claim_text:
+                claims.append(
+                    PatentClaim(
+                        number=claim_num, text=claim_text, dependent_on=dependent_on
+                    )
+                )
+                processed.add(claim_id if claim_id else str(claim_num))
+
+    # Try alternative formats if no claims found
+    if not claims:
+        # Method 2: Ordered lists
+        if ol_elements := claims_copy.find_all("ol"):
+            for ol in ol_elements:
+                for i, li in enumerate(ol.find_all("li"), 1):
+                    claim_text = li.get_text(strip=True)
+
+                    # Get claim number
+                    claim_num = i
+                    if match := patterns["claim_start"].search(claim_text):
+                        try:
+                            claim_num = int(match.group(1))
+                            claim_text = claim_text[match.end() :].strip()
+                        except (ValueError, TypeError):
+                            pass
+
+                    # Check dependency
+                    dependent_on = None
+                    if match := patterns["dependency"].search(claim_text):
+                        try:
+                            dep_num = int(match.group(1))
+                            if dep_num < claim_num:
+                                dependent_on = dep_num
+                        except (ValueError, TypeError):
+                            pass
+
+                    if claim_text:
+                        claims.append(
+                            PatentClaim(
+                                number=claim_num,
+                                text=claim_text,
+                                dependent_on=dependent_on,
+                            )
+                        )
+
+        # Method 3: <claim> elements
+        elif claim_elements := claims_copy.find_all("claim"):
+            for claim_elem in claim_elements:
+                # Get claim number
+                claim_num_str = claim_elem.get("num", "")
+                if not claim_num_str and "id" in claim_elem.attrs:
+                    if match := patterns["claim_num"].search(claim_elem["id"]):
+                        claim_num_str = next((g for g in match.groups() if g), "")
+
+                try:
+                    claim_num = int(claim_num_str)
+                except (ValueError, TypeError):
+                    continue
+
+                claim_text = claim_elem.get_text(strip=True)
+
+                # Check dependency
+                dependent_on = None
+                if "depends" in claim_elem.attrs:
+                    try:
+                        dependent_on = int(claim_elem["depends"])
+                    except (ValueError, TypeError):
+                        pass
+
+                if not dependent_on and (
+                    match := patterns["dependency"].search(claim_text)
+                ):
+                    try:
+                        dep_num = int(match.group(1))
+                        if dep_num < claim_num:
+                            dependent_on = dep_num
+                    except (ValueError, TypeError):
+                        pass
+
                 if claim_text:
-                    claims.append(PatentClaim(number=claim_num, text=claim_text, dependent_on=dependent_on))
-            except (ValueError, TypeError):
-                continue
-    
-    # Special handling for missing claim 1
-    has_claim_1 = any(claim.number == 1 for claim in claims)
-    if not has_claim_1 and claims and claims[0].number > 1:
-        # Look specifically for claim 1
-        claim1_div = claims_copy.find('div', id=lambda x: x and ('cl0001' in x or 'cl001' in x or 'cl01' in x or 'cl1' in x))
-        if claim1_div:
-            # Process this claim separately
-            claim_text_elements = claim1_div.find_all('div', class_='claim-text')
-            if claim_text_elements:
+                    claims.append(
+                        PatentClaim(
+                            number=claim_num, text=claim_text, dependent_on=dependent_on
+                        )
+                    )
+
+        # Method 4: Plain text parsing
+        else:
+            text = claims_copy.get_text()
+            for match in re.finditer(
+                r"(\d+)\.\s+(.*?)(?=(?:\d+)\.|$)", text, re.DOTALL
+            ):
+                try:
+                    claim_num = int(match.group(1))
+                    claim_text = match.group(2).strip()
+
+                    dependent_on = None
+                    if dep_match := patterns["dependency"].search(claim_text):
+                        try:
+                            dep_num = int(dep_match.group(1))
+                            if dep_num < claim_num:
+                                dependent_on = dep_num
+                        except (ValueError, TypeError):
+                            pass
+
+                    if claim_text:
+                        claims.append(
+                            PatentClaim(
+                                number=claim_num,
+                                text=claim_text,
+                                dependent_on=dependent_on,
+                            )
+                        )
+                except (ValueError, TypeError):
+                    continue
+
+    # Check for missing claim 1
+    if (
+        claims
+        and not any(claim.number == 1 for claim in claims)
+        and claims[0].number > 1
+    ):
+        claim1_id_patterns = ["cl0001", "cl001", "cl01", "cl1"]
+        if claim1_div := claims_copy.find(
+            "div",
+            id=lambda x: x and any(pattern in x for pattern in claim1_id_patterns),
+        ):
+            if text_elements := claim1_div.find_all("div", class_="claim-text"):
                 claim_parts = []
-                for element in claim_text_elements:
-                    # Handle image spans
+                for element in text_elements:
                     element_clean = BeautifulSoup(str(element), "html.parser")
-                    image_spans = element_clean.find_all("span", class_="patent-image-not-available")
-                    for span in image_spans:
+                    for span in element_clean.find_all(
+                        "span", class_="patent-image-not-available"
+                    ):
                         span.replace_with("[CHEMICAL FORMULA]")
-                    part_text = element_clean.get_text(strip=True)
-                    if part_text:
+                    if part_text := element_clean.get_text(strip=True):
                         claim_parts.append(part_text)
                 claim_text = " ".join(claim_parts)
                 claims.append(PatentClaim(number=1, text=claim_text, dependent_on=None))
-    
+
     # Sort claims by number
     claims.sort(key=lambda c: c.number)
-    
     return claims
-
-
-def extract_inventors(soup: BeautifulSoup) -> List[str]:
-    """
-    Extract patent inventors, preserving all original names including foreign language content.
-
-    Args:
-        soup: BeautifulSoup object containing the HTML
-
-    Returns:
-        List of inventor names with original text preserved
-    """
-    inventors = []
-
-    # Method 1: Look for elements with itemprop="inventor"
-    inventor_elements = soup.find_all(attrs={"itemprop": "inventor"})
-    for elem in inventor_elements:
-        # Try to find the name within the element
-        name_elem = elem.find(attrs={"itemprop": "name"})
-        if name_elem:
-            name = name_elem.get_text(strip=True)
-        else:
-            name = elem.get_text(strip=True)
-
-        if name and name not in inventors:
-            inventors.append(name)
-
-    # Method 2: Look for inventor section by ID or class
-    if not inventors:
-        inventor_section = soup.find(id="inventorSection") or soup.find(
-            id="patent-inventors"
-        )
-        if inventor_section:
-            # Look for list items or spans within the section
-            items = inventor_section.find_all(["li", "span", "div", "a"])
-            for item in items:
-                name = item.get_text(strip=True)
-                if (
-                    name
-                    and name not in inventors
-                    and not any(c in name for c in ["Inventor", "Current", "Original"])
-                ):
-                    inventors.append(name)
-
-    # Method 3: Look for dt/dd pairs with 'Inventor' label
-    if not inventors:
-        dt_elements = soup.find_all("dt")
-        for dt in dt_elements:
-            if "inventor" in dt.get_text().lower():
-                dd = dt.find_next("dd")
-                # Only proceed if dd exists (fixing the same bug)
-                if dd is not None:
-                    name = dd.get_text(strip=True)
-                    if name and name not in inventors:
-                        inventors.append(name)
-
-    # Method 4: Look for table rows with inventor information
-    if not inventors:
-        rows = soup.find_all("tr")
-        for row in rows:
-            cells = row.find_all("td")
-            if len(cells) >= 2:
-                header = cells[0].get_text().lower()
-                if "inventor" in header:
-                    value = cells[1].get_text(strip=True)
-                    if value and value not in inventors:
-                        inventors.append(value)
-
-    # Clean up results (removing labels but preserving all name text)
-    cleaned_inventors = []
-    for inventor in inventors:
-        # Remove any labels but keep all name characters
-        cleaned = re.sub(r"^(Current|Original)\s+Inventor:?\s*", "", inventor)
-        cleaned = cleaned.strip()
-        if cleaned and cleaned not in cleaned_inventors:
-            cleaned_inventors.append(cleaned)
-
-    return cleaned_inventors
-
-
-def extract_abstract(soup: BeautifulSoup) -> str:
-    """
-    Extract patent abstract with optimized performance.
-    
-    Args:
-        soup: BeautifulSoup object containing the HTML
-        
-    Returns:
-        Abstract text with foreign language removed
-    """
-    # Try all selectors at once
-    abstract_section = (
-        soup.find("abstract") or 
-        soup.find(attrs={"itemprop": "abstract"}) or
-        soup.find("section", id="abstract")
-    )
-    
-    if not abstract_section:
-        return ""
-    
-    # Create a single copy
-    abstract_copy = BeautifulSoup(str(abstract_section), "html.parser")
-    
-    # Remove all foreign language spans in one pass
-    for src in abstract_copy.find_all("span", class_="google-src-text"):
-        src.extract()
-    
-    # Get text content in one operation
-    abstract_text = abstract_copy.get_text(strip=True)
-    
-    # Clean up formatting
-    abstract_text = re.sub(r'\s{2,}', ' ', abstract_text)
-    
-    return abstract_text.strip()
 
 
 def extract_data(html_content: str) -> PatentData:
@@ -802,9 +647,9 @@ def extract_data(html_content: str) -> PatentData:
     data.patent_number = extract_text(soup, "publicationNumber")
     data.title = extract_text(soup, "title")
 
-    # Extract inventors and assignees - preserving foreign language
-    data.inventors = extract_inventors(soup)
-    data.assignees = extract_assignees(soup)
+    # Extract people and organizations
+    data.inventors = extract_names(soup, "inventor")
+    data.assignees = extract_names(soup, "assignee")
 
     # Extract dates
     data.filing_date = extract_text(soup, "filingDate")
@@ -812,11 +657,26 @@ def extract_data(html_content: str) -> PatentData:
     data.priority_date = extract_text(soup, "priorityDate")
     data.grant_date = extract_grant_date(soup)
 
-    # Extract content, removing foreign language
-    data.abstract = extract_abstract(soup)
-    data.description = extract_description(soup)
+    # Extract content sections
+    data.abstract = extract_section_text(
+        soup,
+        [
+            ("tag", "abstract", None),
+            ("tag", "abstract", ("itemprop", "abstract")),
+            ("id", "abstract", None),
+        ],
+    )
 
-    # Extract claims section
+    data.description = extract_section_text(
+        soup,
+        [
+            ("tag", "section", ("itemprop", "description")),
+            ("id", "descriptionText", None),
+            ("id", "description", None),
+        ],
+    )
+
+    # Extract claims
     claims_section = soup.find(id="claims") or soup.find(
         "section", attrs={"itemprop": "claims"}
     )
@@ -832,7 +692,7 @@ def save_data(data: PatentData, output: str, format: str) -> None:
     Args:
         data: PatentData object
         output: Output file path
-        format: Output format ('json', 'yaml', 'sqlite', 'text')
+        format: Output format ('json', 'yaml', 'text')
 
     Raises:
         ValueError: If an invalid format is provided
