@@ -1,5 +1,5 @@
-import os
 import pandas as pd
+from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
 import re
@@ -18,7 +18,7 @@ def clean_filename(name: str) -> str:
 
 
 def process_patent_url(
-    args: tuple[str, str, str, int],
+    args: tuple[str, str, Path, int],
 ) -> tuple[PatentData | None, str | None]:
     """
     Process a single patent URL
@@ -43,16 +43,16 @@ def process_patent_url(
 
         # Use only patent number for filename
         filename_base = patent_data.patent_number
-        output_file = os.path.join(output_path, filename_base)
-        
+        output_file = output_path / filename_base
+
         # Save the raw text content
-        text_dir = os.path.join(output_path, "text", "raw")
-        os.makedirs(text_dir, exist_ok=True)
-        raw_text_file = os.path.join(text_dir, f"{filename_base}.txt")
-        save_all_text(html_content, raw_text_file)
+        text_dir = output_path / "raw"
+        text_dir.mkdir(exist_ok=True, parents=True)
+        raw_text_file = text_dir / f"{filename_base}.txt"
+        save_all_text(html_content, str(raw_text_file))
 
         # Save patent data in requested format
-        save_data(patent_data, output_file, output_format)
+        save_data(patent_data, str(output_file), output_format)
 
         return patent_data, None
 
@@ -64,9 +64,9 @@ def process_patent_url(
 
 
 def extract_patents_from_csv(
-    csv_file: str,
+    csv_file: str | Path,
     output_format: str = "yaml",
-    output_path: str = "output",
+    output_path: str | Path = "output",
     limit: int | None = None,
     timeout: int = 30,
     max_workers: int = 10,
@@ -82,11 +82,15 @@ def extract_patents_from_csv(
     :param max_workers: Maximum number of concurrent workers
     :return: List of extracted PatentData objects
     """
+    # Convert to Path objects
+    csv_file = Path(csv_file)
+    output_path = Path(output_path)
+    
     # Create output directory if it doesn't exist
-    os.makedirs(output_path, exist_ok=True)
+    output_path.mkdir(exist_ok=True, parents=True)
 
     # Create a log file for errors
-    log_path = os.path.join(output_path, "extraction_errors.log")
+    log_path = output_path / "extraction_errors.log"
 
     # Read CSV file - skip the first row which contains the search URL
     df = pd.read_csv(csv_file, skiprows=1)
@@ -210,11 +214,15 @@ def main() -> int:
 
         socket.setdefaulttimeout(args.timeout)
 
+        # Convert string paths to Path objects
+        csv_file = Path(args.csv)
+        output_dir = Path(args.output_dir)
+        
         # Extract patents
         patents = extract_patents_from_csv(
-            args.csv,
+            csv_file,
             args.format,
-            args.output_dir,
+            output_dir,
             limit=args.limit,
             timeout=args.timeout,
             max_workers=args.workers,

@@ -32,10 +32,10 @@ This tool automates the extraction of detailed patent information from Google Pa
 ## Installation
 
 1. Clone the repository
-2. Set up a Python virtual environment (Python 3.8+ recommended)
-3. Install dependencies:
+2. Install uv if you don't have it.
+3. Install dependencies using uv:
    ```
-   pip install -r requirements.txt
+   uv sync
    ```
 
 ## Usage
@@ -55,7 +55,7 @@ save_data(patent_data, "output/patent", "yaml")  # Save as YAML
 
 ### Batch Processing
 
-To process multiple patents from a CSV file:
+To process multiple patents from a CSV file from google patent:
 
 ```python
 from batch_patent import extract_patents_from_csv
