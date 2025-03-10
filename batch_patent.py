@@ -4,7 +4,7 @@ from tqdm import tqdm
 from datetime import datetime
 import re
 import concurrent.futures
-from patent_extract import get_html, extract_data, save_data, PatentData
+from patent_extract import get_html, extract_data, save_data, PatentData, save_all_text
 
 
 def clean_filename(name: str) -> str:
@@ -38,14 +38,21 @@ def process_patent_url(
         # Extract patent data directly from HTML content
         patent_data = extract_data(html_content)
 
-        # Validate patent data has essential fields
-        if not patent_data.patent_number:
-            return None, f"No patent number extracted for {url}"
+        if not patent_data or not patent_data.patent_number:
+            return None, f"Failed to extract patent data from {url}"
 
-        # Save in specified format
-        filename = f"{clean_filename(patent_data.patent_number)}.{output_format}"
-        filepath = os.path.join(output_path, filename)
-        save_data(patent_data, filepath, output_format)
+        # Use only patent number for filename
+        filename_base = patent_data.patent_number
+        output_file = os.path.join(output_path, filename_base)
+        
+        # Save the raw text content
+        text_dir = os.path.join(output_path, "text", "raw")
+        os.makedirs(text_dir, exist_ok=True)
+        raw_text_file = os.path.join(text_dir, f"{filename_base}.txt")
+        save_all_text(html_content, raw_text_file)
+
+        # Save patent data in requested format
+        save_data(patent_data, output_file, output_format)
 
         return patent_data, None
 
