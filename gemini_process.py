@@ -18,10 +18,8 @@ Follow these strict JSON formatting rules:
 4. Provide your response ONLY as a valid JSON object with no other text before or after
 5. If information isn't available, use null or "Not explicitly stated" instead of leaving fields empty
 6. For multi-line text fields, format strings in YAML style (clean, indented format)
-7. Independent claims should not be dependent on earlier claims. There are usually 1-3 independent claims.
-8. The patent_number should be the patent number including the country code.
-9. The title should be the complete title of the patent.
-10. The number of elements in the list in the example json are just examples. There could be more or less.
+7. DO NOT include colons (:) within key names - each key must be a simple string
+8. DO NOT format any field as "key": "value": "description" - this is invalid JSON
 
 {
   "patent_number": "Patent number including country code",
@@ -126,7 +124,7 @@ Follow these strict JSON formatting rules:
     "Market impact 2",
     "Market impact 3"
   ],
-  "potential_limitations": "Limitations or 'Not explicitly stated'",
+  "potential_limitations": "Describe limitations or state 'Not explicitly stated' if none found",
   "forward_citations_count": "Number as string",
   "backward_citations_count": "Number as string",
   "list_of_forward_citations": [
@@ -197,6 +195,11 @@ IMPORTANT:
 6. Format dates consistently as YYYY-MM-DD
 7. Ensure all string values are properly escaped with double quotes
 8. For multi-line strings, try to be concise and to the point. Use fewer points if possible. Do not use more than 5 points.
+9. DO NOT format the "potential_limitations" field like a key-value pair. It should be formatted as: "potential_limitations": "text describing limitations..." and nothing else.
+10. Independent claims should not be dependent on earlier claims. There are usually 1-3 independent claims.
+11. The patent_number should be the patent number including the country code.
+12. The title should be the complete title of the patent.
+13. The number of elements in the list in the example json are just examples. There could be more or less.
 
 Common Errors to Avoid:
 - Special characters: Properly escape quotes, less than/greater than symbols, etc.
@@ -205,6 +208,8 @@ Common Errors to Avoid:
 - Proper quoting: All keys and string values must be in double quotes
 - Unicode characters: Properly escape or convert non-ASCII characters
 - Empty values: Use null or "Not explicitly stated" rather than empty strings or fields
+- Nested key values: Never format as "key": "value": "description" - this is invalid JSON
+- Colons in keys: JSON keys cannot contain colons; use only simple string keys
 
 Example Output Format for Multi-line Text:
 "abstract": [
@@ -212,6 +217,9 @@ Example Output Format for Multi-line Text:
   "The compound selectively targets cancer cells while leaving healthy cells intact.",
   "Clinical trials show efficacy in breast and colon cancers."
 ]
+
+Example of correct potential_limitations formatting:
+"potential_limitations": "The technology requires specialized equipment and has limited depth penetration, so it is not suitable for all cancer types"
 """
 
 
