@@ -19,7 +19,12 @@ Follow these strict JSON formatting rules:
 5. If information isn't available, use null or "Not explicitly stated" instead of leaving fields empty
 6. For multi-line text fields, format strings in YAML style (clean, indented format)
 7. DO NOT include colons (:) within key names - each key must be a simple string
-8. DO NOT format any field as "key": "value": "description" - this is invalid JSON
+8. For multi-line strings, try to be concise and to the point. Use fewer points if possible. Do not use more than 5 points.
+9. DO NOT format the "potential_limitations" field like a key-value pair. It should be formatted as: "potential_limitations": "text describing limitations..." and nothing else.
+10. Independent claims should not be dependent on earlier claims. There are usually 1-3 independent claims.
+11. The patent_number should be the patent number including the country code.
+12. The title should be the complete title of the patent.
+13. The number of elements in the list in the example json are just examples. There could be more or less.
 
 {
   "patent_number": "Patent number including country code",
