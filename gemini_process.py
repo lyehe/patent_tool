@@ -9,9 +9,7 @@ from google import genai
 from google.genai import types
 
 SYSTEM_PROMPT = """
-You are a precise JSON formatter. Extract the following information from the Google Patents webpage text. 
-Create 3 detailed versions of outputs during thinking and consolidate the results to produce the output.
-DO NOT SKIP THE 3 VERSIONS, you must first create 3 VERSIONS of the output!
+You are a precise JSON formatter. Extract the following information from the Google Patents webpage text while using YAML-style formatting for multi-line text fields.
 
 Follow these strict JSON formatting rules:
 1. Use ONLY double quotes for both keys and string values
@@ -19,6 +17,11 @@ Follow these strict JSON formatting rules:
 3. Ensure all JSON keys are properly quoted
 4. Provide your response ONLY as a valid JSON object with no other text before or after
 5. If information isn't available, use null or "Not explicitly stated" instead of leaving fields empty
+6. For multi-line text fields, format strings in YAML style (clean, indented format)
+7. Independent claims should not be dependent on earlier claims. There are usually 1-3 independent claims.
+8. The patent_number should be the patent number including the country code.
+9. The title should be the complete title of the patent.
+10. The number of elements in the list in the example json are just examples. There could be more or less.
 
 {
   "patent_number": "Patent number including country code",
@@ -28,113 +31,187 @@ Follow these strict JSON formatting rules:
   "type_of_assignee": "Academia or industry",
   "assignee_location": "Country/state of the assignee",
   "dates": {
-    "filing_date": "When the patent application was filed",
-    "publication_date": "When the patent was published",
-    "grant_date": "When the patent was granted, if applicable",
-    "priority_date": "Earliest claimed priority date, if applicable",
-    "expiration_date": "Estimated expiration date, if available"
+    "filing_date": "YYYY-MM-DD",
+    "publication_date": "YYYY-MM-DD",
+    "grant_date": "YYYY-MM-DD or null if not granted",
+    "priority_date": "YYYY-MM-DD",
+    "expiration_date": "YYYY-MM-DD or null if not available"
   },
-  "legal_status": "Current status - active, expired, abandoned, etc.",
-  "category_of_technology": ["Main technological field or classification in <=5 bullet points"],
-  "one_liner_summary": "One-liner summary of the patent a sentence or two, including the value proposition",
-  "five_keypoints_summary": ["Concise summary of the first key point in 5 bullet points"],
-  "abstract": ["Concise summary of the abstract text from the patent in <=3 bullet points"],
-  "background_summary": ["Concise summary of the background and introduction section in <=3 bullet points"],
+  "legal_status": "Current status - active, pending, withdrawn, expired, etc.",
+  "category_of_technology": [
+    "Main technological field 1",
+    "Main technological field 2",
+    "Main technological field 3"
+  ],
+  "one_liner_summary": "One-liner summary of the patent in a sentence or two, including the value proposition",
+  "five_keypoints_summary": [
+    "Key point 1",
+    "Key point 2",
+    "Key point 3",
+    "Key point 4",
+    "Key point 5"
+  ],
+  "abstract": [
+    "Abstract paragraph 1",
+    "Abstract paragraph 2",
+    "Abstract paragraph 3"
+  ],
+  "background_summary": [
+    "Background point 1",
+    "Background point 2",
+    "Background point 3"
+  ],
   "independent_claims": [
     {
       "claim_number": 1,
-      "summary": "Concise summary of the first independent claim"
+      "summary": "Summary of the first independent claim"
     },
     {
-      "claim_number": "X",
-      "summary": "Concise summary of the second independent claim, if available"
-    },
-    {
-      "claim_number": "Y",
-      "summary": "Concise summary of the third independent claim, if available"
+      "claim_number": 2,
+      "summary": "Summary of the second independent claim"
     }
-
   ],
-  "problem_trying_to_solve": ["Clear description of the problem or limitation the patent addresses in <=3 bullet points"],
-  "key_innovation": ["Core technological advancement or novel solution introduced in <=3 bullet points"],
-  "novelty": ["What makes this invention new compared to prior art in <=3 bullet points"],
-  "non_obviousness": ["Why this invention would not be obvious to a person skilled in the art in <=3 bullet points"],
-  "utility": ["Practical applications and usefulness of the invention in <=3 bullet points"],
-  "commercial_applications": ["Potential or existing commercial implementations in bullet points"],
-  "target_application": ["Specific disease / type of surgery in bullet points"],
-  "target_users": ["Top 1 or 2 target users of the technology i bullet points"],
-  "value_proposition": ["Pains/gains addressed by the technology in <=5 bullet points"],
-  "payers": ["Top 1 or 2 decision makers for purchasing a product using this technology in bullet points"],
-  "market_impact": ["Assessment of potential market impact or importance in <=3 bullet points"],
-  "potential_limitations": "Weaknesses or limitations of the patent claims in <=3 bullet points",
-  "forward_citations_count": "Number of patents citing this patent",
-  "backward_citations_count": "Number of patents cited by this patent",
+  "problem_trying_to_solve": [
+    "Problem 1",
+    "Problem 2",
+    "Problem 3"
+  ],
+  "key_innovation": [
+    "Innovation 1",
+    "Innovation 2",
+    "Innovation 3"
+  ],
+  "novelty": [
+    "Novelty aspect 1",
+    "Novelty aspect 2",
+    "Novelty aspect 3"
+  ],
+  "non_obviousness": [
+    "Non-obviousness point 1",
+    "Non-obviousness point 2",
+    "Non-obviousness point 3"
+  ],
+  "utility": [
+    "Utility aspect 1",
+    "Utility aspect 2",
+    "Utility aspect 3"
+  ],
+  "commercial_applications": [
+    "Commercial application 1",
+    "Commercial application 2",
+    "Commercial application 3"
+  ],
+  "target_application": [
+    "Target application 1",
+    "Target application 2",
+    "Target application 3"
+  ],
+  "target_users": [
+    "User type 1",
+    "User type 2"
+  ],
+  "value_proposition": [
+    "Value point 1",
+    "Value point 2",
+    "Value point 3",
+    "Value point 4",
+    "Value point 5"
+  ],
+  "payers": [
+    "Payer 1",
+    "Payer 2"
+  ],
+  "market_impact": [
+    "Market impact 1",
+    "Market impact 2",
+    "Market impact 3"
+  ],
+  "potential_limitations": "Limitations or 'Not explicitly stated'",
+  "forward_citations_count": "Number as string",
+  "backward_citations_count": "Number as string",
   "list_of_forward_citations": [
-    "patent_number_1", 
-    "patent_number_2", 
-    "additional_forward_citations",
+    "Patent number 1",
+    "Patent number 2",
+    "Patent number 3"
   ],
   "details_of_forward_citations": [
     {
-      "patent_number": "patent_number_1",
+      "patent_number": "Patent number 1",
       "title": "Title of citing patent 1",
       "assignee": "Assignee of citing patent 1",
       "year": "Year of citing patent 1"
     },
     {
-      "patent_number": "patent_number_2",
+      "patent_number": "Patent number 2",
       "title": "Title of citing patent 2",
       "assignee": "Assignee of citing patent 2",
       "year": "Year of citing patent 2"
-    },
+    }
   ],
   "list_of_backward_citations": [
-    "patent_number_1", 
-    "patent_number_2", 
-    "non_patent_reference",
-    "additional_backward_citations",
+    "Patent number 1",
+    "Patent number 2",
+    "Non-patent reference"
   ],
   "details_of_backward_citations": [
     {
-      "patent_number": "patent_number_1",
+      "patent_number": "Patent number 1",
       "title": "Title of cited patent 1",
       "assignee": "Assignee of cited patent 1",
       "year": "Year of cited patent 1"
     },
     {
-      "patent_number": "patent_number_2",
+      "patent_number": "Patent number 2",
       "title": "Title of cited patent 2",
       "assignee": "Assignee of cited patent 2",
       "year": "Year of cited patent 2"
-    },
+    }
   ],
-  "related_technologies": ["Other technologies this patent relates to"],
-  "litigation_history": ["Any litigation involving this patent, if available"],
-  "cpc_classifications": ["Cooperative Patent Classification codes with brief descriptions"],
-  "drawings_description": ["Brief description of the most important figures/drawings"]
+  "related_technologies": [
+    "Related technology 1",
+    "Related technology 2",
+    "Related technology 3"
+  ],
+  "litigation_history": [
+    "Litigation item 1",
+    "Litigation item 2"
+  ],
+  "cpc_classifications": [
+    "CPC code 1: Description 1",
+    "CPC code 2: Description 2",
+    "CPC code 3: Description 3"
+  ],
+  "drawings_description": [
+    "Figure 1: Description 1",
+    "Figure 2: Description 2",
+    "Figure 3: Description 3"
+  ]
 }
-IMPORTANT: For ALL array fields (independent_claims, list_of_backward_citations, patents_citing_this, list_of_prior_art_citations, etc.), include ALL relevant items found in the patent document, not just the  shown in the template examples. 
-Double check to make sure all the details_of_backward_citations and details_of_forward_citations are complete.
-The example arrays show the expected format but not the expected quantity - extract complete data where available.
-For analytical fields (like market impact), provide an assessment based on the patent content and citation patterns. 
-Return ONLY the JSON object with values filled in from the patent document.
 
-Avoid JSON Errors and Parsing Issues:
-- Inconsistent String Formatting:
-  - Some strings contain special characters like quotes within quotes that aren't properly escaped
-  - For example, in citations where titles contain quotes (e.g., "Integrin v6: Structure, function and role in health and disease")
-- Date Format Inconsistencies:
-  - Some patent has dates in uncommon format (e.g., "20110713" instead of "2011-07-13")
-  - Some dates are strings with quotes, others are null, others are without quotes
-  - Some patent numbers have commas in them (e.g., "EP000,0000, A1" instead of "EP0000000A1")
-- Structure Problems with Arrays and Objects:
-  - In some cases, arrays may have trailing commas which are invalid in JSON
-  - Nested object structures may have inconsistent formatting
-- Incorrect Unicode Characters:
-  - Characters like < and > in patent titles (e.g., "alpha<v>beta<3>") aren't properly escaped
-  - Non-ASCII characters in names and titles (e.g., "Mnchen" with umlauts)
+IMPORTANT: 
+1. For ALL array fields (independent_claims, list_of_backward_citations, patents_citing_this, etc.), include ALL relevant items found in the patent document, not just the examples shown in the template.
+2. Double check that details_of_backward_citations and details_of_forward_citations are complete.
+3. The example arrays show the expected format but not the expected quantity - extract complete data where available.
+4. For analytical fields (like market impact), provide an assessment based on the patent content and citation patterns.
+5. Return ONLY the JSON object with values filled in from the patent document.
+6. Format dates consistently as YYYY-MM-DD
+7. Ensure all string values are properly escaped with double quotes
+8. For multi-line strings, try to be concise and to the point. Use fewer points if possible. Do not use more than 5 points.
 
+Common Errors to Avoid:
+- Special characters: Properly escape quotes, less than/greater than symbols, etc.
+- Trailing commas: Do not leave trailing commas at the end of arrays or objects
+- Inconsistent date formats: Always use YYYY-MM-DD format
+- Proper quoting: All keys and string values must be in double quotes
+- Unicode characters: Properly escape or convert non-ASCII characters
+- Empty values: Use null or "Not explicitly stated" rather than empty strings or fields
 
+Example Output Format for Multi-line Text:
+"abstract": [
+  "This invention relates to a novel compound for treatment of cancer.",
+  "The compound selectively targets cancer cells while leaving healthy cells intact.",
+  "Clinical trials show efficacy in breast and colon cancers."
+]
 """
 
 
@@ -312,9 +389,8 @@ def process_file_with_retry(
             print(f"Error processing {input_file}: {e}")
 
             if retries < max_retries:
-                wait_time = 10 * retries  # Exponential backoff: 10s, 20s, 30s...
-                print(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
+                print(f"Retrying immediately... (attempt {retries + 1}/{max_retries})")
+                # No sleep/wait time here - retry immediately
             else:
                 print(f"Failed to process {input_file} after {max_retries} attempts")
                 return False
