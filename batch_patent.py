@@ -163,14 +163,102 @@ def extract_patents_from_csv(
     return patents
 
 
+def extract_patents_from_txt(
+    txt_file: str | Path,
+    output_format: str = "yaml",
+    output_path: str | Path = "output",
+    limit: int | None = None,
+    timeout: int = 30,
+    max_workers: int = 10,
+) -> list[PatentData]:
+    """
+    Extract patents from a text file containing Google Patent URLs (one per line)
+    
+    :param txt_file: Path to text file with patent URLs
+    :param output_format: Output format ('yaml' or 'json')
+    :param output_path: Directory to save individual patent files
+    :param limit: Maximum number of patents to process
+    :param timeout: Timeout in seconds for HTTP requests
+    :param max_workers: Maximum number of concurrent workers
+    :return: List of extracted PatentData objects
+    """
+    # Convert to Path objects
+    txt_file = Path(txt_file)
+    output_path = Path(output_path)
+    
+    # Create output directory if it doesn't exist
+    output_path.mkdir(exist_ok=True, parents=True)
+
+    # Create a log file for errors
+    log_path = output_path / "extraction_errors.log"
+
+    # Read text file line by line
+    with open(txt_file, 'r', encoding='utf-8') as f:
+        urls = [line.strip() for line in f if line.strip()]
+    
+    # Apply limit if specified
+    if limit is not None and limit > 0:
+        urls = urls[:limit]
+        print(f"Limited to processing {limit} patents")
+
+    # Process patents in parallel
+    patents: list[PatentData] = []
+    success_count = 0
+    error_count = 0
+
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        log_file.write(
+            f"Patent Extraction Log - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+        log_file.write("=" * 80 + "\n\n")
+
+        tasks = [(url, output_format, output_path, timeout) for url in urls]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(
+                tqdm(
+                    executor.map(process_patent_url, tasks),
+                    total=len(tasks),
+                    desc="Processing patents",
+                )
+            )
+
+            for url, (patent_data, error_msg) in zip(urls, results):
+                if error_msg:
+                    log_file.write(f"ERROR - {url}: {error_msg}\n")
+                    print(f"Error: {url}: {error_msg.split('\n')[0]}")
+                    error_count += 1
+                else:
+                    patents.append(patent_data)
+                    print(f"Saved: {patent_data.patent_number} - {patent_data.title}")
+                    success_count += 1
+
+        # Write summary
+        summary = (
+            f"\nExtraction Summary:\n"
+            f"Total URLs: {len(urls)}\n"
+            f"Successfully processed: {success_count}\n"
+            f"Errors: {error_count}\n"
+        )
+        log_file.write(summary)
+        print(summary)
+
+    return patents
+
+
 def main() -> int:
     """
     Main function to run batch patent extraction
     """
     import argparse
 
-    parser = argparse.ArgumentParser(description="Batch process patents from CSV file")
-    parser.add_argument("--csv", required=True, help="Input CSV file with patent URLs")
+    parser = argparse.ArgumentParser(description="Batch process patents from CSV or text file")
+    
+    # Create a mutually exclusive group for input file types
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--csv", help="Input CSV file with patent URLs")
+    input_group.add_argument("--txt", help="Input text file with patent URLs (one per line)")
+    
     parser.add_argument(
         "--format",
         choices=["yaml", "json"],
@@ -215,18 +303,29 @@ def main() -> int:
         socket.setdefaulttimeout(args.timeout)
 
         # Convert string paths to Path objects
-        csv_file = Path(args.csv)
         output_dir = Path(args.output_dir)
         
-        # Extract patents
-        patents = extract_patents_from_csv(
-            csv_file,
-            args.format,
-            output_dir,
-            limit=args.limit,
-            timeout=args.timeout,
-            max_workers=args.workers,
-        )
+        # Extract patents based on input type
+        if args.csv:
+            csv_file = Path(args.csv)
+            patents = extract_patents_from_csv(
+                csv_file,
+                args.format,
+                output_dir,
+                limit=args.limit,
+                timeout=args.timeout,
+                max_workers=args.workers,
+            )
+        elif args.txt:
+            txt_file = Path(args.txt)
+            patents = extract_patents_from_txt(
+                txt_file,
+                args.format,
+                output_dir,
+                limit=args.limit,
+                timeout=args.timeout,
+                max_workers=args.workers,
+            )
 
         print(f"Processed {len(patents)} patents successfully")
 
