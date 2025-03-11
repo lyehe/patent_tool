@@ -247,15 +247,19 @@ def fix_json_string(json_str: str) -> str:
 
     # Fix trailing commas in arrays/objects
     json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
-    
+
     # Fix the common "potential_limitations": "value": "description" error pattern
-    json_str = re.sub(r'"potential_limitations":\s*"[^"]*":\s*"([^"]*)"', r'"potential_limitations": "\1"', json_str)
-    
+    json_str = re.sub(
+        r'"potential_limitations":\s*"[^"]*":\s*"([^"]*)"',
+        r'"potential_limitations": "\1"',
+        json_str,
+    )
+
     # Fix any field with a format like "key": "value": "description"
     pattern = r'"([^"]+)":\s*"[^"]*":\s*"([^"]*)"'
     while re.search(pattern, json_str):
         json_str = re.sub(pattern, r'"\1": "\2"', json_str)
-    
+
     # Fix unescaped quotes in string values
     # First, identify string values
     def fix_inner_quotes(match):
@@ -264,9 +268,9 @@ def fix_json_string(json_str: str) -> str:
         if '"' in value[1:-1]:
             value = value[0] + value[1:-1].replace('"', '\\"') + value[-1]
         return value
-    
+
     json_str = re.sub(r'("(?:[^"\\]|\\.)*")', fix_inner_quotes, json_str)
-    
+
     return json_str
 
 
@@ -277,25 +281,25 @@ def parse_json_safely(json_str: str) -> dict[str, Any] | None:
     :return: Parsed dictionary or None if all parsing attempts fail
     """
     # Remove markdown code block formatting if present
-    json_str = re.sub(r'^```json\s*', '', json_str)
-    json_str = re.sub(r'\s*```$', '', json_str)
-    
+    json_str = re.sub(r"^```json\s*", "", json_str)
+    json_str = re.sub(r"\s*```$", "", json_str)
+
     # First attempt: direct parsing
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
         print(f"Initial JSON parsing failed: {e}")
-        
+
     # Second attempt: try fixing common issues
     try:
         fixed_json = fix_json_string(json_str)
         return json.loads(fixed_json)
     except json.JSONDecodeError as e:
         print(f"Fixed JSON parsing failed: {e}")
-        
+
         # Try to pinpoint the exact location of the error
         line_col = e.lineno, e.colno
-        lines = fixed_json.split('\n')
+        lines = fixed_json.split("\n")
         if 0 <= e.lineno - 1 < len(lines):
             print(f"Error near line {e.lineno}, column {e.colno}")
             error_line = lines[e.lineno - 1]
@@ -303,24 +307,24 @@ def parse_json_safely(json_str: str) -> dict[str, Any] | None:
             context_end = min(len(error_line), e.colno + 30)
             error_context = error_line[context_start:context_end]
             print(f"Error vicinity: ...{error_context}...")
-    
+
     # Third attempt: try a more aggressive approach with manual field extraction
     try:
         # Extract key fields by regex pattern matching
         result = {}
-        
+
         # Define patterns for extracting each field
         patterns = {
             "patent_number": r'"patent_number"\s*:\s*"([^"]*)"',
             "title": r'"title"\s*:\s*"([^"]*)"',
             # Add more patterns for critical fields
         }
-        
+
         for field, pattern in patterns.items():
             match = re.search(pattern, json_str)
             if match:
                 result[field] = match.group(1)
-        
+
         # If we extracted at least some fields, return the partial result
         if result:
             print("Returning partial JSON data from regex extraction")
@@ -339,12 +343,12 @@ def parse_json_safely(json_str: str) -> dict[str, Any] | None:
             .replace("false", "False")
             .replace("null", "None")
         )
-        
+
         # Replace JSON-style string pairs with Python dict syntax
         python_str = re.sub(r'"([^"]*)"\s*:\s*', r'"\1": ', python_str)
-        
+
         # Try to extract dictionaries if present
-        dict_pattern = r'{[^{}]*}'
+        dict_pattern = r"{[^{}]*}"
         matches = re.findall(dict_pattern, python_str)
         if matches:
             for match in matches:
@@ -456,7 +460,7 @@ def process_file_with_retry(
     :return: True if processing succeeded, False otherwise
     """
     retries = 0
-    output_file = output_dir / f"{input_file.stem}_result.yaml"
+    output_file = output_dir / f"{input_file.stem}.yaml"
 
     # Skip if output already exists (comment out this section if you want to reprocess)
     if output_file.exists():
@@ -499,7 +503,7 @@ def batch_process_folder(input_dir: str | Path, max_retries: int = 3) -> list[Pa
 
     # Create output directory
     output_dir = input_path.parent / f"{input_path.name}_results"
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Get all text files in the directory
     text_files = [
