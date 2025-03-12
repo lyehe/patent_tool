@@ -6,6 +6,7 @@
 *.jsonl
 *.jsonl.gz
 *.log
+*.md
 
 .venv
 __pycache__

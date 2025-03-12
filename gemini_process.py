@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import time
 from pathlib import Path
 from typing import Any
 import yaml  # Requires PyYAML package (pip install pyyaml)
@@ -9,222 +8,365 @@ from google import genai
 from google.genai import types
 
 SYSTEM_PROMPT = """
-You are a precise JSON formatter. Extract the following information from the Google Patents webpage text while using YAML-style formatting for multi-line text fields.
+You are a precise JSON formatter tasked with extracting structured patent information. Convert Google Patents webpage text into well-formatted JSON while following these rules for accuracy and consistency.
 
-Follow these strict JSON formatting rules:
+JSON FORMATTING RULES:
 1. Use ONLY double quotes for both keys and string values
 2. Do not include trailing commas in arrays or objects
-3. Ensure all JSON keys are properly quoted
-4. Provide your response ONLY as a valid JSON object with no other text before or after
-5. If information isn't available, use null or "Not explicitly stated" instead of leaving fields empty
-6. For multi-line text fields, format strings in YAML style (clean, indented format)
-7. DO NOT include colons (:) within key names - each key must be a simple string
-8. For multi-line strings, try to be concise and to the point. Use fewer points if possible. Do not use more than 5 points.
-9. DO NOT format the "potential_limitations" field like a key-value pair. It should be formatted as: "potential_limitations": "text describing limitations..." and nothing else.
-10. Independent claims should not be dependent on earlier claims. There are usually 1-3 independent claims.
-11. The patent_number should be the patent number including the country code.
-12. The title should be the complete title of the patent.
-13. The number of elements in the list in the example json are just examples. There could be more or less.
+3. Ensure all keys are properly quoted
+4. Provide ONLY a valid JSON object with no surrounding text
+5. Use null or "Not explicitly stated" for missing information
+6. Format multi-line text in clean, indented YAML style
+7. Keep keys simple with NO colons within key names
+8. Format "potential_limitations" as a simple string, not key-value pairs
+9. Independent claims should never reference earlier claims
+10. Include country code in patent numbers (e.g., "USXXXXXXXX")
+11. Use full and accurate patent titles
 
 {
-  "patent_number": "Patent number including country code",
-  "title": "Complete title of the patent",
-  "inventors": ["Name of inventor 1", "Name of inventor 2"],
-  "assignee": "Company or individual that owns the patent rights",
-  "type_of_assignee": "Academia or industry",
-  "assignee_location": "Country/state of the assignee",
-  "dates": {
-    "filing_date": "YYYY-MM-DD",
-    "publication_date": "YYYY-MM-DD",
-    "grant_date": "YYYY-MM-DD or null if not granted",
-    "priority_date": "YYYY-MM-DD",
-    "expiration_date": "YYYY-MM-DD or null if not available"
+  "metadata": {
+    "extraction_date": "YYYY-MM-DD",
+    "extraction_version": "1.0"
   },
-  "legal_status": "Current status - active, pending, withdrawn, expired, etc.",
-  "category_of_technology": [
-    "Main technological field 1",
-    "Main technological field 2",
-    "Main technological field 3"
-  ],
-  "one_liner_summary": "One-liner summary of the patent in a sentence or two, including the value proposition",
-  "five_keypoints_summary": [
-    "Key point 1",
-    "Key point 2",
-    "Key point 3",
-    "Key point 4",
-    "Key point 5"
-  ],
-  "abstract": [
-    "Abstract paragraph 1",
-    "Abstract paragraph 2",
-    "Abstract paragraph 3"
-  ],
-  "background_summary": [
-    "Background point 1",
-    "Background point 2",
-    "Background point 3"
-  ],
-  "independent_claims": [
-    {
-      "claim_number": 1,
-      "summary": "Summary of the first independent claim"
+  
+  "bibliographic_information": {
+    "patent_number": "Patent number including country code",
+    "title": "Complete title of the patent",
+    "inventors": ["Name of inventor 1", "Name of inventor 2"],
+    "assignee": "Company or individual that owns the patent rights",
+    "type_of_assignee": "Academia or industry",
+    "assignee_location": "Country/state of the assignee",
+    "dates": {
+      "filing_date": "YYYY-MM-DD",
+      "publication_date": "YYYY-MM-DD",
+      "grant_date": "YYYY-MM-DD or null if not granted",
+      "priority_date": "YYYY-MM-DD",
+      "expiration_date": "YYYY-MM-DD or null if not available"
     },
-    {
-      "claim_number": 2,
-      "summary": "Summary of the second independent claim"
-    }
-  ],
-  "problem_trying_to_solve": [
-    "Problem 1",
-    "Problem 2",
-    "Problem 3"
-  ],
-  "key_innovation": [
-    "Innovation 1",
-    "Innovation 2",
-    "Innovation 3"
-  ],
-  "novelty": [
-    "Novelty aspect 1",
-    "Novelty aspect 2",
-    "Novelty aspect 3"
-  ],
-  "non_obviousness": [
-    "Non-obviousness point 1",
-    "Non-obviousness point 2",
-    "Non-obviousness point 3"
-  ],
-  "utility": [
-    "Utility aspect 1",
-    "Utility aspect 2",
-    "Utility aspect 3"
-  ],
-  "commercial_applications": [
-    "Commercial application 1",
-    "Commercial application 2",
-    "Commercial application 3"
-  ],
-  "target_application": [
-    "Target application 1",
-    "Target application 2",
-    "Target application 3"
-  ],
-  "target_users": [
-    "User type 1",
-    "User type 2"
-  ],
-  "value_proposition": [
-    "Value point 1",
-    "Value point 2",
-    "Value point 3",
-    "Value point 4",
-    "Value point 5"
-  ],
-  "payers": [
-    "Payer 1",
-    "Payer 2"
-  ],
-  "market_impact": [
-    "Market impact 1",
-    "Market impact 2",
-    "Market impact 3"
-  ],
-  "potential_limitations": "Describe limitations or state 'Not explicitly stated' if none found",
-  "forward_citations_count": "Number as string",
-  "backward_citations_count": "Number as string",
-  "list_of_forward_citations": [
-    "Patent number 1",
-    "Patent number 2",
-    "Patent number 3"
-  ],
-  "details_of_forward_citations": [
-    {
-      "patent_number": "Patent number 1",
-      "title": "Title of citing patent 1",
-      "assignee": "Assignee of citing patent 1",
-      "year": "Year of citing patent 1"
+    "legal_status": "Current status - active, pending, withdrawn, expired, etc."
+  },
+  
+  "technical_content": {
+    "key_technology": "Maximum 3-word technology description",
+    "category_of_technology": [
+      "Main technological field 1",
+      "Main technological field 2",
+      "Main technological field 3"
+    ],
+    "one_liner_summary": "One-sentence summary of the patent including the value proposition",
+    "five_keypoints_summary": [
+      "Key point 1",
+      "Key point 2",
+      "Key point 3",
+      "Key point 4",
+      "Key point 5"
+    ],
+    "abstract": [
+      "Abstract paragraph 1",
+      "Abstract paragraph 2"
+    ],
+    "background_summary": [
+      "Background point 1",
+      "Background point 2",
+      "Background point 3"
+    ],
+    "key_components": [
+      "Component 1",
+      "Component 2",
+      "Component 3"
+    ],
+    "technical_advantages": [
+      "Advantage 1",
+      "Advantage 2",
+      "Advantage 3"
+    ],
+    "method_steps": [
+      "Step 1",
+      "Step 2",
+      "Step 3"
+    ],
+    "problem_trying_to_solve": [
+      "Problem 1",
+      "Problem 2",
+      "Problem 3"
+    ],
+    "key_innovation": [
+      "Innovation 1",
+      "Innovation 2",
+      "Innovation 3"
+    ]
+  },
+  
+  "claim_analysis": {
+    "independent_claims": [
+      {
+        "claim_number": 1,
+        "summary": "Summary of the first independent claim"
+      },
+      {
+        "claim_number": 11,
+        "summary": "Summary of the second independent claim"
+      }
+    ],
+    "claim_tree": {
+      "1": ["2", "3", "4"],
+      "11": ["12", "13", "14"]
     },
-    {
-      "patent_number": "Patent number 2",
-      "title": "Title of citing patent 2",
-      "assignee": "Assignee of citing patent 2",
-      "year": "Year of citing patent 2"
+    "claim_terms_of_interest": [
+      "Term 1",
+      "Term 2",
+      "Term 3"
+    ],
+    "novelty": [
+      "Novelty aspect 1",
+      "Novelty aspect 2",
+      "Novelty aspect 3"
+    ],
+    "non_obviousness": [
+      "Non-obviousness point 1",
+      "Non-obviousness point 2",
+      "Non-obviousness point 3"
+    ],
+    "utility": [
+      "Utility aspect 1",
+      "Utility aspect 2",
+      "Utility aspect 3"
+    ]
+  },
+  
+  "legal_assessment": {
+    "prosecution_history_summary": [
+      "Prosecution point 1",
+      "Prosecution point 2"
+    ],
+    "claim_strength_assessment": [
+      "Strength point 1",
+      "Strength point 2",
+      "Strength point 3"
+    ],
+    "invalidation_risks": [
+      "Risk 1",
+      "Risk 2"
+    ],
+    "litigation_history": [
+      "Litigation item 1",
+      "Litigation item 2"
+    ],
+    "potential_limitations": "Text describing limitations of the patent technology",
+    "subject_quality": "good/average/bad rating based on claim scope, novelty, and commercial potential"
+  },
+  
+  "commercial_assessment": {
+    "commercial_applications": [
+      "Commercial application 1",
+      "Commercial application 2",
+      "Commercial application 3"
+    ],
+    "target_application": [
+      "Target application 1",
+      "Target application 2",
+      "Target application 3"
+    ],
+    "target_users": [
+      "User type 1",
+      "User type 2",
+      "User type 3"
+    ],
+    "value_proposition": [
+      "Value point 1",
+      "Value point 2",
+      "Value point 3"
+    ],
+    "payers": [
+      "Payer 1",
+      "Payer 2"
+    ],
+    "market_impact": [
+      "Market impact 1",
+      "Market impact 2",
+      "Market impact 3"
+    ],
+    "industry_adoption": [
+      "Adoption example 1",
+      "Adoption example 2"
+    ],
+    "licensing_information": [
+      "Licensing info 1",
+      "Licensing info 2"
+    ],
+    "estimated_market_value": "Estimated value range"
+  },
+  
+  "citation_information": {
+    "forward_citations_count": "Number as string",
+    "backward_citations_count": "Number as string",
+    "list_of_forward_citations": [
+      "USXXXXXXX1",
+      "EPXXXXXXX1",
+      "USXXXXXXX2"
+    ],
+    "list_of_backward_citations": [
+      "USXXXXXXX2",
+      "JPXXXXXXX1",
+      "USXXXXXXX3"
+    ],
+    "list_of_non_patent_citations": [
+      "Citation 1",
+      "Citation 2",
+      "Citation 3"
+    ],
+    "citation_landscape": [
+      "Landscape observation 1",
+      "Landscape observation 2"
+    ],
+    "self_citations": [
+      "USXXXXXXX3",
+      "USXXXXXXX4"
+    ],
+    "most_cited_by": [
+      "Company 1",
+      "Company 2",
+      "Company 3"
+    ],
+    "confidence_score": {
+      "citation_analysis": "4",
+      "market_assessment": "3"
     }
-  ],
-  "list_of_backward_citations": [
-    "Patent number 1",
-    "Patent number 2",
-    "Non-patent reference"
-  ],
-  "details_of_backward_citations": [
-    {
-      "patent_number": "Patent number 1",
-      "title": "Title of cited patent 1",
-      "assignee": "Assignee of cited patent 1",
-      "year": "Year of cited patent 1"
+  },
+  
+  "patent_family_information": {
+    "family_id": "INPADOC or Derwent family identifier",
+    "us_family": {
+      "patents": [
+        "USXXXXXXX5",
+        "USXXXXXXX6",
+        "USXXXXXXX7"
+      ],
+      "applications": [
+        "US15/XXX,XXX",
+        "US16/XXX,XXX",
+        "US17/XXX,XXX"
+      ]
     },
-    {
-      "patent_number": "Patent number 2",
-      "title": "Title of cited patent 2",
-      "assignee": "Assignee of cited patent 2",
-      "year": "Year of cited patent 2"
-    }
-  ],
-  "related_technologies": [
-    "Related technology 1",
-    "Related technology 2",
-    "Related technology 3"
-  ],
-  "litigation_history": [
-    "Litigation item 1",
-    "Litigation item 2"
-  ],
-  "cpc_classifications": [
-    "CPC code 1: Description 1",
-    "CPC code 2: Description 2",
-    "CPC code 3: Description 3"
-  ],
-  "drawings_description": [
-    "Figure 1: Description 1",
-    "Figure 2: Description 2",
-    "Figure 3: Description 3"
-  ]
+    "ep_family": {
+      "patents": [
+        "EPXXXXXXX2",
+        "EPXXXXXXX3"
+      ],
+      "applications": [
+        "EPXXXXXXXX.XA",
+        "EPXXXXXXXX.XA"
+      ]
+    },
+    "jp_family": {
+      "patents": [
+        "JPXXXXXXX2",
+        "JPXXXXXXX3"
+      ],
+      "applications": [
+        "JPXXXXXXXXXA",
+        "JPXXXXXXXXXA"
+      ]
+    },
+    "cn_family": {
+      "patents": [
+        "CNXXXXXXXXX",
+        "CNXXXXXXXXX"
+      ],
+      "applications": [
+        "CNXXXXXXXXX.XA",
+        "CNXXXXXXXXX.XA"
+      ]
+    },
+    "wipo_family": {
+      "publications": [
+        "WOXXXXXXXX",
+        "WOXXXXXXXY"
+      ],
+      "applications": [
+        "PCT/XX/XXXX/XXXXX",
+        "PCT/XX/XXXX/XXXXY"
+      ]
+    },
+    "other_family": {
+      "patents": [
+        "KRXXXXXXXXXX",
+        "KRXXXXXXXXXY"
+      ],
+      "applications": [
+        "KRXXXXXXXXXXXA",
+        "KRXXXXXXXXXXXB"
+      ]
+    },
+    "priority_applications": [
+      "USXXXXXXXX",
+      "PCT/XX/XXXX/XXXXX"
+    ],
+    "related_applications": [
+      "US15/XXX,XXX",
+      "US16/XXX,XXX"
+    ]
+  },
+  
+  "classification_information": {
+    "cpc_classifications": [
+      "CPC code 1: Description 1",
+      "CPC code 2: Description 2",
+      "CPC code 3: Description 3"
+    ],
+    "ipc_classifications": [
+      "IPC code 1: Description 1",
+      "IPC code 2: Description 2"
+    ],
+    "uspc_classifications": [
+      "USPC code 1: Description 1",
+      "USPC code 2: Description 2"
+    ],
+    "related_technologies": [
+      "Related technology 1",
+      "Related technology 2",
+      "Related technology 3"
+    ]
+  },
+  
+  "visual_information": {
+    "drawings_count": "Number as string",
+    "drawings_description": [
+      "Figure 1: Description 1",
+      "Figure 2: Description 2",
+      "Figure 3: Description 3"
+    ],
+    "key_figures": [
+      "Figure 1",
+      "Figure 3",
+      "Figure 5"
+    ]
+  }
 }
 
-IMPORTANT: 
-1. For ALL array fields (independent_claims, list_of_backward_citations, patents_citing_this, etc.), include ALL relevant items found in the patent document, not just the examples shown in the template.
-2. Double check that details_of_backward_citations and details_of_forward_citations are complete.
-3. The example arrays show the expected format but not the expected quantity - extract complete data where available.
-4. For analytical fields (like market impact), provide an assessment based on the patent content and citation patterns.
-5. Return ONLY the JSON object with values filled in from the patent document.
-6. Format dates consistently as YYYY-MM-DD
-7. Ensure all string values are properly escaped with double quotes
-8. For multi-line strings, try to be concise and to the point. Use fewer points if possible. Do not use more than 5 points.
-9. DO NOT format the "potential_limitations" field like a key-value pair. It should be formatted as: "potential_limitations": "text describing limitations..." and nothing else.
-10. Independent claims should not be dependent on earlier claims. There are usually 1-3 independent claims.
-11. The patent_number should be the patent number including the country code.
-12. The title should be the complete title of the patent.
-13. The number of elements in the list in the example json are just examples. There could be more or less.
+KEY INSTRUCTIONS:
+1. Include ALL relevant items in array fields, not just what's shown in the template
+2. For citation lists, include ONLY patent/publication numbers (e.g., "USXXXXXXXX")
+3. Base analytical fields (market impact, claim strength) on objective evidence from the patent
+4. Format dates consistently as YYYY-MM-DD
+5. Keep one-liner fields under 150 characters and summary points under 100 characters
+6. For claim_tree, use claim numbers as strings and show dependencies correctly
+7. For patent families, separate patents from applications in their respective arrays
+8. Provide confidence scores on a 1-5 scale for subjective assessments
+9. Use appropriate array sizes: 5 points for five_keypoints_summary, 3 points for most other arrays
+10. For key_technology, provide a concise 1-3 word description of the core technology
+11. For subject_quality, provide a single rating of "good", "average", or "bad" based on claim scope, novelty, and commercial potential
 
-Common Errors to Avoid:
-- Special characters: Properly escape quotes, less than/greater than symbols, etc.
-- Trailing commas: Do not leave trailing commas at the end of arrays or objects
-- Inconsistent date formats: Always use YYYY-MM-DD format
-- Proper quoting: All keys and string values must be in double quotes
-- Unicode characters: Properly escape or convert non-ASCII characters
-- Empty values: Use null or "Not explicitly stated" rather than empty strings or fields
-- Nested key values: Never format as "key": "value": "description" - this is invalid JSON
-- Colons in keys: JSON keys cannot contain colons; use only simple string keys
-
-Example Output Format for Multi-line Text:
-"abstract": [
-  "This invention relates to a novel compound for treatment of cancer.",
-  "The compound selectively targets cancer cells while leaving healthy cells intact.",
-  "Clinical trials show efficacy in breast and colon cancers."
-]
-
-Example of correct potential_limitations formatting:
-"potential_limitations": "The technology requires specialized equipment and has limited depth penetration, so it is not suitable for all cancer types"
+COMMON ERRORS TO AVOID:
+- Unescaped special characters in strings
+- Trailing commas at the end of arrays/objects
+- Inconsistent date formats
+- Missing quotes around keys or string values
+- Improper formatting of nested objects
+- Empty values (use null or "Not explicitly stated")
+- Colons in key names
+- Unbalanced brackets or braces
+- Mixing data types (string vs. number)
 """
 
 
@@ -393,8 +535,8 @@ def generate(input_file_path: str | Path) -> dict[str, Any]:
         ),
     ]
     generate_content_config = types.GenerateContentConfig(
-        temperature=0.25,
-        top_p=0.75,
+        temperature=0.1,
+        top_p=0.3,
         top_k=64,
         max_output_tokens=65536,
         safety_settings=[
@@ -507,7 +649,7 @@ def batch_process_folder(input_dir: str | Path, max_retries: int = 3) -> list[Pa
 
     # Get all text files in the directory
     text_files = [
-        f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in [".txt"]
+        f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in [".md"]
     ]
 
     if not text_files:
