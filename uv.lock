@@ -484,6 +484,15 @@ wheels = [
 ]
 
 [[package]]
+name = "json-repair"
+version = "0.39.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/60/6d1599bc01070d9fe3840d245ae80fd24b981c732d962842825ce7a9fde6/json_repair-0.39.1.tar.gz", hash = "sha256:e90a489f247e1a8fc86612a5c719872a3dbf9cbaffd6d55f238ec571a77740fa", size = 30040 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/b9/2e445481555422b907dab468b53574bc1e995099ca1a1201d0d876ca05e9/json_repair-0.39.1-py3-none-any.whl", hash = "sha256:3001409a2f319249f13e13d6c622117a5b70ea7e0c6f43864a0233cdffc3a599", size = 20686 },
+]
+
+[[package]]
 name = "jupyter-client"
 version = "8.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -773,6 +782,7 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "google-genai" },
     { name = "ipykernel" },
+    { name = "json-repair" },
     { name = "markdownify" },
     { name = "pandas" },
     { name = "pyyaml" },
@@ -787,6 +797,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.13.3" },
     { name = "google-genai", specifier = ">=1.2.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "json-repair", specifier = ">=0.39.1" },
     { name = "markdownify", specifier = ">=1.1.0" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pyyaml", specifier = ">=6.0.2" },

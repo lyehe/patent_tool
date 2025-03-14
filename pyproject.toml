@@ -9,6 +9,7 @@ dependencies = [
     "beautifulsoup4>=4.13.3",
     "google-genai>=1.2.0",
     "ipykernel>=6.29.5",
+    "json-repair>=0.39.1",
     "markdownify>=1.1.0",
     "pandas>=2.2.3",
     "pyyaml>=6.0.2",

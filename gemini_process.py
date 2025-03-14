@@ -6,6 +6,8 @@ from typing import Any
 import yaml  # Requires PyYAML package (pip install pyyaml)
 from google import genai
 from google.genai import types
+from json_repair import repair_json
+from datetime import datetime
 
 SYSTEM_PROMPT = """
 You are a precise JSON formatter tasked with extracting structured patent information. Convert Google Patents webpage text into well-formatted JSON while following these rules for accuracy and consistency.
@@ -417,96 +419,72 @@ def fix_json_string(json_str: str) -> str:
 
 
 def parse_json_safely(json_str: str) -> dict[str, Any] | None:
-    """Parse JSON with multiple fallback methods.
+    """Parse JSON with minimal processing - only repair if necessary.
 
     :param json_str: JSON string to parse
-    :return: Parsed dictionary or None if all parsing attempts fail
+    :return: Parsed dictionary or None if parsing fails
     """
     # Remove markdown code block formatting if present
     json_str = re.sub(r"^```json\s*", "", json_str)
     json_str = re.sub(r"\s*```$", "", json_str)
 
-    # First attempt: direct parsing
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError as e:
-        print(f"Initial JSON parsing failed: {e}")
+    # Store original for debugging
+    original_json_str = json_str
+    
+    # Create a log directory if it doesn't exist
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Create log file for parsing errors
+    error_log = log_dir / f"json_parsing_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-    # Second attempt: try fixing common issues
-    try:
-        fixed_json = fix_json_string(json_str)
-        return json.loads(fixed_json)
-    except json.JSONDecodeError as e:
-        print(f"Fixed JSON parsing failed: {e}")
-
-        # Try to pinpoint the exact location of the error
-        line_col = e.lineno, e.colno
-        lines = fixed_json.split("\n")
-        if 0 <= e.lineno - 1 < len(lines):
-            print(f"Error near line {e.lineno}, column {e.colno}")
-            error_line = lines[e.lineno - 1]
-            context_start = max(0, e.colno - 30)
-            context_end = min(len(error_line), e.colno + 30)
-            error_context = error_line[context_start:context_end]
-            print(f"Error vicinity: ...{error_context}...")
-
-    # Third attempt: try a more aggressive approach with manual field extraction
-    try:
-        # Extract key fields by regex pattern matching
-        result = {}
-
-        # Define patterns for extracting each field
-        patterns = {
-            "patent_number": r'"patent_number"\s*:\s*"([^"]*)"',
-            "title": r'"title"\s*:\s*"([^"]*)"',
-            # Add more patterns for critical fields
-        }
-
-        for field, pattern in patterns.items():
-            match = re.search(pattern, json_str)
-            if match:
-                result[field] = match.group(1)
-
-        # If we extracted at least some fields, return the partial result
-        if result:
-            print("Returning partial JSON data from regex extraction")
-            return result
-    except Exception as e:
-        print(f"Regex extraction failed: {e}")
-        pass
-
-    # Fourth attempt: use a more permissive approach with ast.literal_eval
-    try:
-        import ast
-
-        # Replace "true", "false", "null" with Python equivalents
-        python_str = (
-            json_str.replace("true", "True")
-            .replace("false", "False")
-            .replace("null", "None")
-        )
-
-        # Replace JSON-style string pairs with Python dict syntax
-        python_str = re.sub(r'"([^"]*)"\s*:\s*', r'"\1": ', python_str)
-
-        # Try to extract dictionaries if present
-        dict_pattern = r"{[^{}]*}"
-        matches = re.findall(dict_pattern, python_str)
-        if matches:
-            for match in matches:
-                try:
-                    result = ast.literal_eval(match)
-                    if isinstance(result, dict) and result:
-                        print("Returning partial JSON data from ast.literal_eval")
-                        return result
-                except (SyntaxError, ValueError):
-                    continue
-    except Exception as e:
-        print(f"AST evaluation failed: {e}")
-        pass
-
-    # If all attempts fail
-    return None
+    with open(error_log, "a", encoding="utf-8") as log_file:
+        # First attempt: try standard JSON parsing without any repair
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            error_msg = f"Standard JSON parsing failed: {e}\nError at line {e.lineno}, column {e.colno}: {e.msg}"
+            print(error_msg)
+            
+            # Log the error details
+            log_file.write(f"=== JSON PARSING ERROR ===\n")
+            log_file.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            log_file.write(f"Error: {e}\n")
+            log_file.write(f"Line: {e.lineno}, Column: {e.colno}\n")
+            log_file.write(f"Error message: {e.msg}\n\n")
+            
+            # Log the problematic context
+            if 0 <= e.lineno - 1 < len(json_str.splitlines()):
+                error_line = json_str.splitlines()[e.lineno - 1]
+                log_file.write(f"Error line content: {error_line}\n")
+                # Mark the error position
+                pointer = ' ' * (e.colno - 1) + '^'
+                log_file.write(f"Error position: {pointer}\n\n")
+            
+            # Try repair
+            try:
+                # Fall back to json_repair only if standard parsing fails
+                log_file.write("Attempting repair with json_repair...\n")
+                result = repair_json(json_str, return_objects=True, ensure_ascii=False)
+                log_file.write("Repair successful!\n\n")
+                return result
+            except Exception as repair_e:
+                error_msg = f"Error repairing JSON: {str(repair_e)}"
+                print(error_msg)
+                
+                # Log repair error
+                log_file.write(f"Repair failed: {repair_e}\n\n")
+                
+                # Save the problematic JSON for debugging
+                debug_file = log_dir / f"problematic_json_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                with open(debug_file, "w", encoding="utf-8") as f:
+                    f.write(original_json_str)
+                
+                log_file.write(f"Full JSON saved to: {debug_file}\n")
+                print(f"Saved problematic JSON to {debug_file}")
+                
+                # Return a dict with the raw response to preserve everything
+                return {"raw_response": original_json_str}
 
 
 def generate(input_file_path: str | Path) -> dict[str, Any]:
